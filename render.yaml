@@ -9,3 +9,9 @@ services:
         value: 22.16.0
       - key: BUN_VERSION
         value: 1.2.20
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PORT
+        value: 10000
