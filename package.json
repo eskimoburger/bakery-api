@@ -1,0 +1,31 @@
+{
+  "name": "bakery-api",
+  "version": "1.0.0",
+  "description": "Bakery Inventory & Sales API backed by Supabase.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "lint": "tsc --noEmit",
+    "seed": "bun run scripts/seed.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.84.0",
+    "@aws-sdk/client-s3": "^3.939.0",
+    "@aws-sdk/s3-request-presigner": "^3.939.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "mime-types": "^2.1.35",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.6.1",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/swagger-ui-express": "^4.1.6",
+    "@types/node": "^24.10.1",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  }
+}

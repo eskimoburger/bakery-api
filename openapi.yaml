@@ -1,0 +1,453 @@
+openapi: 3.1.0
+info:
+  title: Bakery Inventory & Sales API
+  version: 1.1.0
+  description: API for managing bakery products, stock, sales records, analytics, and product image uploads to Cloudflare R2.
+servers:
+  - url: http://localhost:3000
+paths:
+  /products:
+    get:
+      summary: Get list of products
+      description: Returns a paginated list of all bakery products with stock and sales info.
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+          required: false
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+      responses:
+        '200':
+          description: Successful product list retrieval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+    post:
+      summary: Create a new product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest'
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /products/{id}:
+    get:
+      summary: Get a product by ID
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Product found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update a product
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdateRequest'
+      responses:
+        '200':
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales:
+    get:
+      summary: Get sales history
+      parameters:
+        - in: query
+          name: productId
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+          required: false
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+          required: false
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+          required: false
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+      responses:
+        '200':
+          description: Sales list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleListResponse'
+    post:
+      summary: Record a sale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleCreateRequest'
+      responses:
+        '201':
+          description: Sale recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '400':
+          description: Invalid request (e.g. not enough stock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /stats/summary:
+    get:
+      summary: Get overall inventory and sales summary
+      responses:
+        '200':
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsSummary'
+
+  /stats/best-sellers:
+    get:
+      summary: Get best-selling products
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+          required: false
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+          required: false
+      responses:
+        '200':
+          description: Best sellers stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BestSellersStats'
+
+  /uploads/product-image:
+    post:
+      summary: Create signed upload URL for product image
+      description: |
+        Returns a signed PUT URL for Cloudflare R2. After uploading the file to `uploadUrl`, persist `key` (or `publicUrl` if provided) in product `imagePath`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+      responses:
+        '201':
+          description: Signed URL created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Product:
+      type: object
+      required:
+        - id
+        - name
+        - price
+        - totalStock
+        - soldQuantity
+        - remainingStock
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+          format: float
+        totalStock:
+          type: integer
+        imagePath:
+          type: string
+          nullable: true
+        soldQuantity:
+          type: integer
+        remainingStock:
+          type: integer
+
+    ProductCreateRequest:
+      type: object
+      required:
+        - name
+        - price
+        - totalStock
+      properties:
+        name:
+          type: string
+        price:
+          type: number
+        totalStock:
+          type: integer
+        imagePath:
+          type: string
+          nullable: true
+
+    ProductUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        price:
+          type: number
+        totalStock:
+          type: integer
+        imagePath:
+          type: string
+          nullable: true
+
+    ProductListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        total:
+          type: integer
+
+    Sale:
+      type: object
+      required:
+        - id
+        - productId
+        - quantity
+        - unitPrice
+        - totalAmount
+        - soldAt
+      properties:
+        id:
+          type: string
+        productId:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+        totalAmount:
+          type: number
+        soldAt:
+          type: string
+          format: date-time
+
+    SaleCreateRequest:
+      type: object
+      required:
+        - productId
+        - quantity
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: integer
+
+    SaleListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Sale'
+        total:
+          type: integer
+
+    StatsSummary:
+      type: object
+      required:
+        - totalProducts
+        - totalStock
+        - totalSoldQuantity
+        - totalRemainingStock
+      properties:
+        totalProducts:
+          type: integer
+        totalStock:
+          type: integer
+        totalSoldQuantity:
+          type: integer
+        totalRemainingStock:
+          type: integer
+
+    BestSellersStats:
+      type: object
+      required:
+        - bestByQuantity
+        - bestByRevenue
+      properties:
+        bestByQuantity:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/BestByQuantity'
+        bestByRevenue:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/BestByRevenue'
+
+    BestByQuantity:
+      type: object
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        soldQuantity:
+          type: integer
+
+    BestByRevenue:
+      type: object
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        soldQuantity:
+          type: integer
+        totalRevenue:
+          type: number
+
+    UploadRequest:
+      type: object
+      required:
+        - filename
+        - contentType
+      properties:
+        filename:
+          type: string
+        contentType:
+          type: string
+
+    UploadResponse:
+      type: object
+      required:
+        - key
+        - uploadUrl
+      properties:
+        key:
+          type: string
+          description: Object key in R2 (store in product imagePath).
+        uploadUrl:
+          type: string
+          description: Pre-signed PUT URL to upload the file.
+        publicUrl:
+          type: string
+          nullable: true
+          description: Public URL if `R2_PUBLIC_BASE_URL` is configured.
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
