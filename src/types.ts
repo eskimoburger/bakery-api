@@ -65,6 +65,21 @@ export interface BestSellersStats {
   } | null;
 }
 
+export interface PurchaseCreateRequest {
+  productId: string;
+  quantity: number;
+}
+
+export interface PurchaseResponse {
+  purchaseId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  purchasedAt: string;
+}
+
 export interface ErrorResponse {
   error: string;
   message?: string;

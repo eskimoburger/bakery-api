@@ -226,6 +226,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /purchases:
+    post:
+      summary: Purchase products (public endpoint - no authentication required)
+      description: |-
+        Public endpoint for customers to purchase bakery products.
+        Anyone can use this endpoint to buy products without authentication.
+        Returns a customer-friendly purchase receipt with product details.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreateRequest'
+      responses:
+        '201':
+          description: Purchase successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseResponse'
+        '400':
+          description: Invalid request (e.g. not enough stock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /stats/summary:
     get:
       summary: Get overall inventory and sales summary
@@ -456,6 +489,65 @@ components:
             $ref: '#/components/schemas/Sale'
         total:
           type: integer
+
+    PurchaseCreateRequest:
+      type: object
+      required:
+        - productId
+        - quantity
+      properties:
+        productId:
+          type: string
+          format: uuid
+          description: ID of the product to purchase
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        quantity:
+          type: integer
+          minimum: 1
+          description: Quantity to purchase
+          example: 2
+
+    PurchaseResponse:
+      type: object
+      required:
+        - purchaseId
+        - productId
+        - productName
+        - quantity
+        - unitPrice
+        - totalAmount
+        - purchasedAt
+      properties:
+        purchaseId:
+          type: string
+          format: uuid
+          description: Unique purchase ID
+        productId:
+          type: string
+          format: uuid
+          description: Product ID
+        productName:
+          type: string
+          description: Name of the product purchased
+          example: "Chocolate Donut"
+        quantity:
+          type: integer
+          description: Quantity purchased
+          example: 2
+        unitPrice:
+          type: number
+          format: float
+          description: Price per unit at time of purchase
+          example: 25.99
+        totalAmount:
+          type: number
+          format: float
+          description: Total amount paid (quantity × unitPrice)
+          example: 51.98
+        purchasedAt:
+          type: string
+          format: date-time
+          description: Timestamp of purchase
 
     StatsSummary:
       type: object

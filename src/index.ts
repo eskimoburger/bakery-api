@@ -13,6 +13,8 @@ import {
   Product,
   ProductCreateRequest,
   ProductUpdateRequest,
+  PurchaseCreateRequest,
+  PurchaseResponse,
   Sale,
   SaleCreateRequest,
   StatsSummary,
@@ -27,25 +29,106 @@ app.get('/', (_req: Request, res: Response) => {
     ? process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com`
     : `http://localhost:${process.env.PORT || 3000}`;
 
-  res.json({
-    name: 'Bakery Inventory & Sales API',
-    version: '1.1.0',
-    description: 'API for managing bakery products, stock, sales records, and analytics',
-    documentation: `${baseUrl}/docs`,
-    endpoints: {
-      products: `${baseUrl}/products`,
-      sales: `${baseUrl}/sales`,
-      stats: {
-        summary: `${baseUrl}/stats/summary`,
-        bestSellers: `${baseUrl}/stats/best-sellers`,
-      },
-      uploads: `${baseUrl}/uploads/product-image`,
-      docs: {
-        swagger: `${baseUrl}/docs`,
-        openapi: `${baseUrl}/docs/openapi.json`,
-      },
-    },
-  });
+  const html = `
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bakery Inventory & Sales API</title>
+    <style>
+        body {
+            font-family: 'Sarabun', sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .endpoint {
+            margin-bottom: 10px;
+        }
+        .method {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 10px;
+            color: white;
+        }
+        .get { background-color: #61affe; }
+        .post { background-color: #49cc90; }
+        .patch { background-color: #fca130; }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="card">
+        <h1>Bakery Inventory & Sales API</h1>
+        <p>API สำหรับจัดการสินค้าคงคลัง ยอดขาย และข้อมูลการวิเคราะห์สำหรับร้านเบเกอรี่</p>
+        <p>เวอร์ชัน: 1.1.0</p>
+        <p>เอกสาร API: <a href="${baseUrl}/docs">Swagger UI</a> | <a href="${baseUrl}/docs/openapi.json">OpenAPI Spec</a></p>
+    </div>
+
+    <div class="card">
+        <h2>จุดเชื่อมต่อหลัก (Endpoints)</h2>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span>
+            <a href="${baseUrl}/products">/products</a>
+            <span> - รายการสินค้าทั้งหมด</span>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span>
+            <a href="${baseUrl}/sales">/sales</a>
+            <span> - รายการยอดขาย</span>
+        </div>
+
+        <div class="endpoint">
+            <span class="method post">POST</span>
+            <span>/purchases</span>
+            <span> - สั่งซื้อสินค้า (ไม่ต้องล็อกอิน)</span>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span>
+            <a href="${baseUrl}/stats/summary">/stats/summary</a>
+            <span> - ภาพรวมสถิติ</span>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span>
+            <a href="${baseUrl}/stats/best-sellers">/stats/best-sellers</a>
+            <span> - สินค้าขายดี</span>
+        </div>
+    </div>
+</body>
+</html>
+  `;
+
+  res.send(html);
 });
 
 const paginationSchema = z.object({
@@ -72,6 +155,11 @@ const productUpdateSchema = z
   });
 
 const saleCreateSchema = z.object({
+  productId: z.string().uuid(),
+  quantity: z.number().int().min(1),
+});
+
+const purchaseCreateSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().min(1),
 });
@@ -435,6 +523,57 @@ app.post('/sales', async (req: Request, res: Response) => {
   }
 
   return res.status(201).json(toSale(data));
+});
+
+// Public purchase endpoint - no authentication required
+app.post('/purchases', async (req: Request, res: Response) => {
+  const parsed = purchaseCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'InvalidRequest', parsed.error.issues[0]?.message);
+  }
+
+  const payload: PurchaseCreateRequest = parsed.data;
+
+  let product: Product | null;
+  try {
+    product = await fetchProductById(payload.productId);
+  } catch (error: any) {
+    return sendError(res, 500, 'ServerError', error.message);
+  }
+
+  if (!product) {
+    return sendError(res, 404, 'NotFound', 'Product not found');
+  }
+
+  if (payload.quantity > product.remainingStock) {
+    return sendError(res, 400, 'InvalidRequest', `Not enough stock. Only ${product.remainingStock} items available.`);
+  }
+
+  const { data, error } = await supabase
+    .from('sales')
+    .insert({
+      product_id: payload.productId,
+      quantity: payload.quantity,
+      unit_price: product.price,
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    return sendError(res, 500, 'ServerError', error.message);
+  }
+
+  const purchase: PurchaseResponse = {
+    purchaseId: data.id,
+    productId: data.product_id,
+    productName: product.name,
+    quantity: data.quantity,
+    unitPrice: Number(data.unit_price),
+    totalAmount: Number(data.total_amount),
+    purchasedAt: data.sold_at,
+  };
+
+  return res.status(201).json(purchase);
 });
 
 app.get('/stats/summary', async (_req: Request, res: Response) => {
