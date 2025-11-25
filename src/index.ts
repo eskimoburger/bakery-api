@@ -5,6 +5,7 @@ import path from 'path';
 import { z } from 'zod';
 import YAML from 'yaml';
 import swaggerUi from 'swagger-ui-express';
+import multer from 'multer';
 import { supabase } from './supabaseClient';
 import {
   BestSellersStats,
@@ -89,6 +90,22 @@ const statsRangeSchema = z.object({
 const uploadRequestSchema = z.object({
   filename: z.string().min(1),
   contentType: z.string().min(1),
+});
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, WebP, and GIF are allowed.'));
+    }
+  },
 });
 
 const openApiPath = path.resolve(process.cwd(), 'openapi.yaml');
@@ -194,6 +211,7 @@ app.get('/products', async (req: Request, res: Response) => {
   return res.json(response);
 });
 
+// Create product with JSON (without image upload)
 app.post('/products', async (req: Request, res: Response) => {
   const parsed = productCreateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -209,6 +227,82 @@ app.post('/products', async (req: Request, res: Response) => {
       price: payload.price,
       total_stock: payload.totalStock,
       image_path: payload.imagePath,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    return sendError(res, 500, 'ServerError', error.message);
+  }
+
+  const product = await fetchProductById(data.id);
+  return res.status(201).json(product);
+});
+
+// Create product with direct image upload (multipart/form-data)
+app.post('/products/with-image', upload.single('image'), async (req: Request, res: Response) => {
+  // Parse form fields
+  const parsed = productCreateSchema.omit({ imagePath: true }).safeParse({
+    name: req.body.name,
+    price: Number(req.body.price),
+    totalStock: Number(req.body.totalStock),
+  });
+
+  if (!parsed.success) {
+    return sendError(res, 400, 'InvalidRequest', parsed.error.issues[0]?.message);
+  }
+
+  const payload = parsed.data;
+  let imagePath: string | undefined;
+
+  // Upload image if provided
+  if (req.file) {
+    const bucketName = 'products';
+    const timestamp = Date.now();
+    const filename = `${timestamp}-${req.file.originalname}`;
+
+    try {
+      // Ensure bucket exists
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.some(b => b.name === bucketName);
+
+      if (!bucketExists) {
+        const { error: createError } = await supabase.storage.createBucket(bucketName, {
+          public: true,
+          fileSizeLimit: 5242880, // 5MB
+        });
+
+        if (createError) {
+          return sendError(res, 500, 'ServerError', `Failed to create bucket: ${createError.message}`);
+        }
+      }
+
+      // Upload file
+      const { error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(filename, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        return sendError(res, 500, 'ServerError', `Failed to upload file: ${uploadError.message}`);
+      }
+
+      imagePath = `${bucketName}/${filename}`;
+    } catch (error: any) {
+      return sendError(res, 500, 'ServerError', error.message);
+    }
+  }
+
+  // Create product
+  const { data, error } = await supabase
+    .from('products')
+    .insert({
+      name: payload.name,
+      price: payload.price,
+      total_stock: payload.totalStock,
+      image_path: imagePath,
     })
     .select('id')
     .single();
@@ -385,6 +479,61 @@ app.get('/stats/best-sellers', async (req: Request, res: Response) => {
   return res.json(stats);
 });
 
+// Direct file upload endpoint (easy to use in Swagger UI)
+app.post('/uploads/product-image/direct', upload.single('file'), async (req: Request, res: Response) => {
+  if (!req.file) {
+    return sendError(res, 400, 'InvalidRequest', 'No file uploaded');
+  }
+
+  const bucketName = 'products';
+  const timestamp = Date.now();
+  const originalName = req.file.originalname;
+  const filename = `${timestamp}-${originalName}`;
+
+  try {
+    // Ensure bucket exists
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const bucketExists = buckets?.some(b => b.name === bucketName);
+
+    if (!bucketExists) {
+      const { error: createError } = await supabase.storage.createBucket(bucketName, {
+        public: true,
+        fileSizeLimit: 5242880, // 5MB
+      });
+
+      if (createError) {
+        throw new Error(`Failed to create bucket: ${createError.message}`);
+      }
+    }
+
+    // Upload file to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from(bucketName)
+      .upload(filename, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload file: ${uploadError.message}`);
+    }
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from(bucketName)
+      .getPublicUrl(filename);
+
+    return res.status(201).json({
+      imagePath: `${bucketName}/${filename}`,
+      publicUrl: publicUrlData.publicUrl,
+      message: 'File uploaded successfully. Use imagePath when creating/updating products.',
+    });
+  } catch (error: any) {
+    return sendError(res, 500, 'ServerError', error.message);
+  }
+});
+
+// Legacy endpoint for programmatic use (returns presigned URL)
 app.post('/uploads/product-image', async (req: Request, res: Response) => {
   const parsed = uploadRequestSchema.safeParse(req.body);
   if (!parsed.success) {

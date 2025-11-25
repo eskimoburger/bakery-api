@@ -109,6 +109,54 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /products/with-image:
+    post:
+      summary: Create a new product with direct image upload (recommended for Swagger UI)
+      description: |
+        Create a product and upload an image in a single request using multipart/form-data.
+        This is the easiest way to test product creation with images in Swagger UI.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - name
+                - price
+                - totalStock
+              properties:
+                name:
+                  type: string
+                  description: Product name
+                  example: "Chocolate Cake"
+                price:
+                  type: number
+                  format: float
+                  description: Product price
+                  example: 25.99
+                totalStock:
+                  type: integer
+                  description: Total stock quantity
+                  example: 50
+                image:
+                  type: string
+                  format: binary
+                  description: Product image (JPEG, PNG, WebP, or GIF, max 5MB)
+      responses:
+        '201':
+          description: Product created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /sales:
     get:
       summary: Get sales history
@@ -213,9 +261,59 @@ paths:
               schema:
                 $ref: '#/components/schemas/BestSellersStats'
 
+
+  /uploads/product-image/direct:
+    post:
+      summary: Upload product image directly (recommended for Swagger UI)
+      description: |
+        Upload an image file directly using multipart/form-data. 
+        This is the easiest way to test image uploads in Swagger UI.
+        Returns the imagePath to use when creating or updating products.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (JPEG, PNG, WebP, or GIF, max 5MB)
+      responses:
+        '201':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - imagePath
+                  - publicUrl
+                  - message
+                properties:
+                  imagePath:
+                    type: string
+                    description: Path to store in product imagePath field
+                    example: "products/1234567890-cake.jpg"
+                  publicUrl:
+                    type: string
+                    description: Public URL to view the image
+                  message:
+                    type: string
+                    example: "File uploaded successfully. Use imagePath when creating/updating products."
+        '400':
+          description: Invalid request (no file or invalid file type)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /uploads/product-image:
     post:
-      summary: Create signed upload URL for product image
+      summary: Create signed upload URL for product image (legacy/programmatic use)
       description: |
         Returns a signed PUT URL for Cloudflare R2. After uploading the file to `uploadUrl`, persist `key` (or `publicUrl` if provided) in product `imagePath`.
       requestBody:
@@ -237,6 +335,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
 
 components:
   schemas:
