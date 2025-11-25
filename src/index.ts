@@ -20,6 +20,33 @@ import {
 const app = express();
 app.use(express.json());
 
+// Root path - API information
+app.get('/', (_req: Request, res: Response) => {
+  const baseUrl = process.env.RENDER === 'true'
+    ? process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com`
+    : `http://localhost:${process.env.PORT || 3000}`;
+
+  res.json({
+    name: 'Bakery Inventory & Sales API',
+    version: '1.1.0',
+    description: 'API for managing bakery products, stock, sales records, and analytics',
+    documentation: `${baseUrl}/docs`,
+    endpoints: {
+      products: `${baseUrl}/products`,
+      sales: `${baseUrl}/sales`,
+      stats: {
+        summary: `${baseUrl}/stats/summary`,
+        bestSellers: `${baseUrl}/stats/best-sellers`,
+      },
+      uploads: `${baseUrl}/uploads/product-image`,
+      docs: {
+        swagger: `${baseUrl}/docs`,
+        openapi: `${baseUrl}/docs/openapi.json`,
+      },
+    },
+  });
+});
+
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -70,7 +97,16 @@ let cachedOpenApi: unknown;
 const loadOpenApi = async () => {
   if (!cachedOpenApi) {
     const file = await fs.readFile(openApiPath, 'utf8');
-    cachedOpenApi = YAML.parse(file);
+    const spec = YAML.parse(file) as Record<string, unknown>;
+
+    // Dynamically set the server URL based on environment
+    const isProduction = process.env.RENDER === 'true';
+    const baseUrl = isProduction
+      ? process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com`
+      : `http://localhost:${process.env.PORT || 3000}`;
+
+    spec.servers = [{ url: baseUrl }];
+    cachedOpenApi = spec;
   }
   return cachedOpenApi;
 };
