@@ -6,6 +6,7 @@ import { z } from 'zod';
 import YAML from 'yaml';
 import swaggerUi from 'swagger-ui-express';
 import multer from 'multer';
+import cors from 'cors';
 import { supabase } from './supabaseClient';
 import {
   BestSellersStats,
@@ -21,6 +22,14 @@ import {
 } from './types';
 
 const app = express();
+
+// Enable CORS for all routes
+app.use(cors({
+  origin: '*', // Allow all origins (suitable for public API)
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
 app.use(express.json());
 
 // Root path - API information
@@ -233,26 +242,45 @@ type SaleRow = {
   unit_price: number | string;
   total_amount: number | string;
   sold_at: string;
+  products?: {
+    name: string;
+    image_path: string | null;
+  } | null;
 };
 
-const toProduct = (row: ProductRow): Product => ({
-  id: row.id,
-  name: row.name,
-  price: Number(row.price),
-  totalStock: row.total_stock,
-  imagePath: row.image_path,
-  soldQuantity: row.sold_quantity,
-  remainingStock: row.remaining_stock,
-});
+const toProduct = (row: ProductRow): Product => {
+  const imageUrl = row.image_path
+    ? `${process.env.SUPABASE_URL}/storage/v1/object/public/${row.image_path}`
+    : null;
 
-const toSale = (row: SaleRow): Sale => ({
-  id: row.id,
-  productId: row.product_id,
-  quantity: row.quantity,
-  unitPrice: Number(row.unit_price),
-  totalAmount: Number(row.total_amount),
-  soldAt: row.sold_at,
-});
+  return {
+    id: row.id,
+    name: row.name,
+    price: Number(row.price),
+    totalStock: row.total_stock,
+    imagePath: row.image_path,
+    imageUrl,
+    soldQuantity: row.sold_quantity,
+    remainingStock: row.remaining_stock,
+  };
+};
+
+const toSale = (row: SaleRow): Sale => {
+  const productImageUrl = row.products?.image_path
+    ? `${process.env.SUPABASE_URL}/storage/v1/object/public/${row.products.image_path}`
+    : null;
+
+  return {
+    id: row.id,
+    productId: row.product_id,
+    productName: row.products?.name,
+    productImageUrl,
+    quantity: row.quantity,
+    unitPrice: Number(row.unit_price),
+    totalAmount: Number(row.total_amount),
+    soldAt: row.sold_at,
+  };
+};
 
 const sendError = (res: Response, status: number, error: string, message?: string) =>
   res.status(status).json({ error, message });
@@ -456,7 +484,9 @@ app.get('/sales', async (req: Request, res: Response) => {
   const { page, limit, productId, from, to } = parsed.data;
   const offset = (page - 1) * limit;
 
-  let query = supabase.from('sales').select('*', { count: 'exact' });
+  let query = supabase
+    .from('sales')
+    .select('*, products(name, image_path)', { count: 'exact' });
 
   if (productId) {
     query = query.eq('product_id', productId);
@@ -476,7 +506,9 @@ app.get('/sales', async (req: Request, res: Response) => {
     return sendError(res, 500, 'ServerError', error.message);
   }
 
-  const items = (data ?? []).map(toSale);
+  // Cast data to unknown first then to SaleRow[] because of the joined table
+  const rows = data as unknown as SaleRow[];
+  const items = (rows ?? []).map(toSale);
   const response: PaginatedResponse<Sale> = {
     items,
     total: count ?? items.length,
@@ -515,14 +547,15 @@ app.post('/sales', async (req: Request, res: Response) => {
       quantity: payload.quantity,
       unit_price: product.price,
     })
-    .select('*')
+    .select('*, products(name, image_path)')
     .single();
 
   if (error) {
     return sendError(res, 500, 'ServerError', error.message);
   }
 
-  return res.status(201).json(toSale(data));
+  const row = data as unknown as SaleRow;
+  return res.status(201).json(toSale(row));
 });
 
 // Public purchase endpoint - no authentication required
@@ -567,6 +600,7 @@ app.post('/purchases', async (req: Request, res: Response) => {
     purchaseId: data.id,
     productId: data.product_id,
     productName: product.name,
+    productImageUrl: product.imageUrl,
     quantity: data.quantity,
     unitPrice: Number(data.unit_price),
     totalAmount: Number(data.total_amount),
@@ -610,10 +644,25 @@ app.get('/stats/best-sellers', async (req: Request, res: Response) => {
     return sendError(res, 500, 'ServerError', error.message);
   }
 
-  const stats: BestSellersStats = (data as BestSellersStats) ?? {
+  const stats = (data as BestSellersStats) ?? {
     bestByQuantity: null,
     bestByRevenue: null,
   };
+
+  // Populate image URLs
+  if (stats.bestByQuantity) {
+    const product = await fetchProductById(stats.bestByQuantity.productId);
+    if (product) {
+      stats.bestByQuantity.imageUrl = product.imageUrl;
+    }
+  }
+
+  if (stats.bestByRevenue) {
+    const product = await fetchProductById(stats.bestByRevenue.productId);
+    if (product) {
+      stats.bestByRevenue.imageUrl = product.imageUrl;
+    }
+  }
 
   return res.json(stats);
 });

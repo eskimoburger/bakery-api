@@ -9,6 +9,7 @@ export interface Product {
   price: number;
   totalStock: number;
   imagePath?: string | null;
+  imageUrl?: string | null;
   soldQuantity: number;
   remainingStock: number;
 }
@@ -30,6 +31,8 @@ export interface ProductUpdateRequest {
 export interface Sale {
   id: string;
   productId: string;
+  productName?: string;
+  productImageUrl?: string | null;
   quantity: number;
   unitPrice: number;
   totalAmount: number;
@@ -53,6 +56,7 @@ export interface BestSellersStats {
     productId: string;
     name: string;
     price: number;
+    imageUrl?: string | null;
     soldQuantity: number;
   } | null;
 
@@ -60,6 +64,7 @@ export interface BestSellersStats {
     productId: string;
     name: string;
     price: number;
+    imageUrl?: string | null;
     soldQuantity: number;
     totalRevenue: number;
   } | null;
@@ -74,6 +79,7 @@ export interface PurchaseResponse {
   purchaseId: string;
   productId: string;
   productName: string;
+  productImageUrl?: string | null;
   quantity: number;
   unitPrice: number;
   totalAmount: number;
