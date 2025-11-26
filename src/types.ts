@@ -12,6 +12,7 @@ export interface Product {
   imageUrl?: string | null;
   soldQuantity: number;
   remainingStock: number;
+  deletedAt?: string | null;
 }
 
 export interface ProductCreateRequest {

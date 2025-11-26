@@ -431,6 +431,35 @@ app.post('/products/with-image', upload.single('image'), async (req: Request, re
   return res.status(201).json(product);
 });
 
+app.get('/products/deleted', async (req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .not('deleted_at', 'is', null)
+    .order('deleted_at', { ascending: false });
+
+  if (error) {
+    return sendError(res, 500, 'ServerError', error.message);
+  }
+
+  // Map to Product interface (filling in missing stats with 0 for now as they are deleted)
+  const items: Product[] = (data ?? []).map((row: any) => ({
+    id: row.id,
+    name: row.name,
+    price: Number(row.price),
+    totalStock: row.total_stock,
+    imagePath: row.image_path,
+    imageUrl: row.image_path
+      ? `${process.env.SUPABASE_URL}/storage/v1/object/public/${row.image_path}`
+      : null,
+    soldQuantity: 0, // Not calculating for deleted items
+    remainingStock: 0, // Not calculating for deleted items
+    deletedAt: row.deleted_at,
+  }));
+
+  return res.json(items);
+});
+
 app.get('/products/:id', async (req: Request, res: Response) => {
   try {
     const product = await fetchProductById(req.params.id);
@@ -443,19 +472,63 @@ app.get('/products/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.patch('/products/:id', async (req: Request, res: Response) => {
-  const parsed = productUpdateSchema.safeParse(req.body);
+app.patch('/products/:id', upload.single('image'), async (req: Request, res: Response) => {
+  // Handle both JSON and Multipart bodies
+  // If multipart, fields might be strings, so we need to coerce them
+  const rawBody = { ...req.body };
+  if (req.is('multipart/form-data')) {
+    if (rawBody.price) rawBody.price = Number(rawBody.price);
+    if (rawBody.totalStock) rawBody.totalStock = Number(rawBody.totalStock);
+  }
+
+  const parsed = productUpdateSchema.safeParse(rawBody);
   if (!parsed.success) {
     return sendError(res, 400, 'InvalidRequest', parsed.error.issues[0]?.message);
   }
 
   const payload: ProductUpdateRequest = parsed.data;
+  let imagePath = payload.imagePath;
+
+  // Handle image upload if file is present
+  if (req.file) {
+    const bucketName = 'products';
+    const timestamp = Date.now();
+    const filename = `${timestamp}-${req.file.originalname}`;
+
+    try {
+      // Ensure bucket exists (reuse logic or helper function ideally, but keeping inline for now)
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.some(b => b.name === bucketName);
+
+      if (!bucketExists) {
+        await supabase.storage.createBucket(bucketName, {
+          public: true,
+          fileSizeLimit: 5242880,
+        });
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(filename, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        return sendError(res, 500, 'ServerError', `Failed to upload file: ${uploadError.message}`);
+      }
+
+      imagePath = `${bucketName}/${filename}`;
+    } catch (error: any) {
+      return sendError(res, 500, 'ServerError', error.message);
+    }
+  }
 
   const updateBody: Record<string, unknown> = {};
   if (payload.name !== undefined) updateBody.name = payload.name;
   if (payload.price !== undefined) updateBody.price = payload.price;
   if (payload.totalStock !== undefined) updateBody.total_stock = payload.totalStock;
-  if (payload.imagePath !== undefined) updateBody.image_path = payload.imagePath;
+  if (imagePath !== undefined) updateBody.image_path = imagePath;
 
   const { data, error } = await supabase
     .from('products')
@@ -473,6 +546,19 @@ app.patch('/products/:id', async (req: Request, res: Response) => {
 
   const product = await fetchProductById(data.id);
   return res.json(product);
+});
+
+app.delete('/products/:id', async (req: Request, res: Response) => {
+  const { error } = await supabase
+    .from('products')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', req.params.id);
+
+  if (error) {
+    return sendError(res, 500, 'ServerError', error.message);
+  }
+
+  return res.status(204).send();
 });
 
 app.get('/sales', async (req: Request, res: Response) => {
