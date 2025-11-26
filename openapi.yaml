@@ -31,6 +31,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProductListResponse'
+
+  /products/deleted:
+    get:
+      summary: Get list of deleted products
+      description: Returns a list of soft-deleted products.
+      responses:
+        '200':
+          description: Successful deleted product list retrieval
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
     post:
       summary: Create a new product
       requestBody:
@@ -89,6 +103,21 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ProductUpdateRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                price:
+                  type: number
+                  format: float
+                totalStock:
+                  type: integer
+                image:
+                  type: string
+                  format: binary
+                  description: New image file to upload (optional)
       responses:
         '200':
           description: Product updated
@@ -104,6 +133,24 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Soft delete a product
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '204':
+          description: Product deleted successfully
+        '500':
+          description: Server error
           content:
             application/json:
               schema:
